@@ -1,0 +1,47 @@
+var geometry = ee.Geometry.Polygon([
+  [[92.30,20.65],
+   [92.30,20.60],
+   [92.32,20.58],
+   [92.34,20.60],
+   [92.33,20.66]]
+]);
+// Get Landsat 8/9 Surface Reflectance
+var image = ee.ImageCollection("LANDSAT/LC08/C02/T1_L2")
+  .filterBounds(aoi)
+  .filterDate('2024-01-01', '2024-01-31')
+  .sort('CLOUD_COVER')
+  .first()
+  .select(['SR_B5', 'SR_B6']); // NIR & SWIR1
+
+// Apply scaling and offset to bands (if needed, depending on use case)
+var scaled = image.expression(
+  '(B5 * 0.0000275) + (-0.2)', {
+    'B5': image.select('SR_B5')
+  }).addBands(
+  image.expression(
+    '(B6 * 0.0000275) + (-0.2)', {
+      'B6': image.select('SR_B6')
+    })
+).rename(['SR_B5', 'SR_B6']);
+
+// Calculate NDTI = (B6 - B5) / (B6 + B5)
+var ndti = scaled.normalizedDifference(['SR_B6', 'SR_B5']).rename('NDTI');
+
+// Add NDTI as a band to the image
+var imageWithNDTI = scaled.addBands(ndti);
+
+// Sample pixel values inside AOI (including NDTI)
+var samples = imageWithNDTI.sample({
+  region: aoi,
+  scale: 30,
+  numPixels: 500,
+  geometries: true
+});
+
+// Export numeric data to CSV
+Export.table.toDrive({
+  collection: samples,
+  description: 'landsat_b5_b6_ndti_numeric',
+  folder: 'GEE_Data',
+  fileFormat: 'CSV'
+});
