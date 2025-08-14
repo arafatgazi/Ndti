@@ -1,0 +1,82 @@
+// Station coordinates from your table
+var coords = [
+  [92.30000305, 20.63999939],
+  [92.30999756, 20.63999939],
+  [92.31999969, 20.63999939],
+  [92.33000183, 20.63999939],
+  [92.30000305, 20.62999916],
+  [92.30999756, 20.62999916],
+  [92.33000183, 20.62999916],
+  [92.33999634, 20.62999916],
+  [92.30000305, 20.62000084],
+  [92.30999756, 20.62000084],
+  [92.31999969, 20.62000084],
+  [92.33000183, 20.62000084],
+  [92.33999634, 20.62000084],
+  [92.31999969, 20.61000061],
+  [92.33000183, 20.61000061],
+  [92.33999634, 20.61000061],
+  [92.31999969, 20.60000038],
+  [92.33999634, 20.60000038],
+  [92.34999847, 20.60000038],
+  [92.31999969, 20.59000015],
+  [92.33000183, 20.59000015],
+  [92.33999634, 20.59000015],
+  [92.34999847, 20.59000015],
+  [92.31999969, 20.57999992],
+  [92.33000183, 20.57999992],
+  [92.33999634, 20.57999992],
+  [92.34999847, 20.57999992],
+  [92.31999969, 20.56999969],
+  [92.33000183, 20.56999969],
+  [92.33999634, 20.56999969],
+  [92.34999847, 20.56999969]
+];
+
+// Create FeatureCollection for stations
+var stations = ee.FeatureCollection(coords.map(function(c, i) {
+  return ee.Feature(ee.Geometry.Point(c), {id: i+1});
+}));
+
+// Landsat 8 data
+var collection = ee.ImageCollection("LANDSAT/LC08/C02/T1_L2")
+  .filterDate('2024-01-01', '2024-12-31')
+  .filterBounds(stations)
+  .filter(ee.Filter.lt('CLOUD_COVER', 10))
+  .map(function(img) {
+    img = img.multiply(0.0001);
+    var ndti = img.normalizedDifference(['SR_B4', 'SR_B3']).rename('NDTI');
+    return ndti.copyProperties(img, img.propertyNames());
+  });
+
+// One-year mean NDTI
+var meanNDTI = collection.mean();
+
+// Extract mean NDTI for each station
+var stationMeans = meanNDTI.reduceRegions({
+  collection: stations,
+  reducer: ee.Reducer.mean(),
+  scale: 30
+});
+
+
+
+// Clip the raster to the bounding box
+var meanNDTI_clip = meanNDTI.clip(stations.geometry().bounds());
+
+// Export GeoTIFF
+Export.image.toDrive({
+  image: meanNDTI_clip,
+  description: 'Mean_NDTI_2024_TIF',
+  folder: 'Afnan',
+  fileNamePrefix: 'mean_ndti_2024',
+  region: stations.geometry().bounds(),
+  scale: 30,
+  crs: 'EPSG:4326',
+  maxPixels: 1e13
+});
+// Visualization
+ Map.centerObject(stations, 10); 
+ Map.addLayer(meanNDTI, {min: -1, max: 1,
+ palette: ['blue','green','yellow','orange','red']}, 'Mean NDTI');
+ Map.addLayer(stations, {}, 'Stations');
